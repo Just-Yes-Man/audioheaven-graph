@@ -11,6 +11,7 @@ from .models import Comment, Songs, Vote
 class SongType(DjangoObjectType):
     total_count = graphene.Int()
     comments = graphene.List(lambda: CommentType)
+    most_voted_rating = graphene.Int()
 
     class Meta:
         model = Songs
@@ -20,6 +21,17 @@ class SongType(DjangoObjectType):
     
     def resolve_comments(self, info):
         return self.comments.all()
+    
+    def resolve_most_voted_rating(self, info):
+        from django.db.models import Count
+
+        vote_counts = (
+            self.votes.values('rating')
+            .annotate(count=Count('rating'))
+            .order_by('-count', '-rating')  # desempate por rating mayor
+        )
+        return vote_counts[0]['rating'] if vote_counts else None
+
 
 
 class VoteType(DjangoObjectType):
@@ -154,24 +166,29 @@ class CreateVote(graphene.Mutation):
 
     class Arguments:
         song_id = graphene.Int(required=True)
+        rating = graphene.Int(required=True)
 
-    def mutate(self, info, song_id):
+    def mutate(self, info, song_id, rating):
         user = info.context.user
         if user.is_anonymous:
-            
             raise GraphQLError('You must be logged in to vote!')
+
+        if rating < 1 or rating > 5:
+            raise GraphQLError('Rating must be between 1 and 5.')
 
         song = Songs.objects.filter(id=song_id).first()
         if not song:
-            
             raise GraphQLError('Invalid Song!')
 
-        Vote.objects.create(
+        # Update vote if already exists
+        vote, created = Vote.objects.update_or_create(
             user=user,
             songs=song,
+            defaults={'rating': rating}
         )
 
         return CreateVote(user=user, song=song)
+
 
 class Mutation(graphene.ObjectType):
     create_song = CreateSong.Field()
