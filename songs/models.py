@@ -8,8 +8,15 @@ class Songs(models.Model):
     posted_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE)
 
 class Vote(models.Model):
+    RATING_CHOICES = [(i, str(i)) for i in range(1, 6)]
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     songs = models.ForeignKey(Songs, related_name='votes', on_delete=models.CASCADE)
+    rating = models.IntegerField(choices=RATING_CHOICES)
+
+    class Meta:
+        unique_together = ('user', 'songs') 
+
 
 class Comment(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
