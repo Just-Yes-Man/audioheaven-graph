@@ -11,7 +11,6 @@ from .models import Comment, Songs, Vote
 class SongType(DjangoObjectType):
     total_count = graphene.Int()
     comments = graphene.List(lambda: CommentType)
-    most_voted_rating = graphene.Int()
 
     class Meta:
         model = Songs
@@ -21,17 +20,6 @@ class SongType(DjangoObjectType):
     
     def resolve_comments(self, info):
         return self.comments.all()
-    
-    def resolve_most_voted_rating(self, info):
-        from django.db.models import Count
-
-        vote_counts = (
-            self.votes.values('rating')
-            .annotate(count=Count('rating'))
-            .order_by('-count', '-rating')  # desempate por rating mayor
-        )
-        return vote_counts[0]['rating'] if vote_counts else None
-
 
 
 class VoteType(DjangoObjectType):
@@ -78,29 +66,7 @@ class Query(graphene.ObjectType):
         if song_id:
             return Comment.objects.filter(song__id=song_id)
         return Comment.objects.all()
-    
-class DeleteSong(graphene.Mutation):
-    ok = graphene.Boolean()
-    message = graphene.String()
 
-    class Arguments:
-        song_id = graphene.Int(required=True)
-
-    def mutate(self, info, song_id):
-        user = info.context.user
-        if user.is_anonymous:
-            raise GraphQLError("You must be logged in to delete a song.")
-
-        try:
-            song = Songs.objects.get(id=song_id)
-        except Songs.DoesNotExist:
-            raise GraphQLError("Song not found.")
-
-        if song.posted_by != user:
-            raise GraphQLError("You are not authorized to delete this song.")
-
-        song.delete()
-        return DeleteSong(ok=True, message="Song deleted successfully.")
     
 class CreateSong(graphene.Mutation):
     id = graphene.Int()
@@ -108,6 +74,7 @@ class CreateSong(graphene.Mutation):
     titulo = graphene.String()
     descripcion = graphene.String()
     posted_by = graphene.Field(UserType)
+    created_at = graphene.DateTime()  
 
     class Arguments:
         url = graphene.String(required=True)
@@ -131,6 +98,7 @@ class CreateSong(graphene.Mutation):
             titulo=song.titulo,
             descripcion=song.descripcion,
             posted_by=song.posted_by,
+            created_at=song.created_at, 
         )
 
 
@@ -166,32 +134,26 @@ class CreateVote(graphene.Mutation):
 
     class Arguments:
         song_id = graphene.Int(required=True)
-        rating = graphene.Int(required=True)
 
-    def mutate(self, info, song_id, rating):
+    def mutate(self, info, song_id):
         user = info.context.user
         if user.is_anonymous:
+            
             raise GraphQLError('You must be logged in to vote!')
-
-        if rating < 1 or rating > 5:
-            raise GraphQLError('Rating must be between 1 and 5.')
 
         song = Songs.objects.filter(id=song_id).first()
         if not song:
+            
             raise GraphQLError('Invalid Song!')
 
-        # Update vote if already exists
-        vote, created = Vote.objects.update_or_create(
+        Vote.objects.create(
             user=user,
             songs=song,
-            defaults={'rating': rating}
         )
 
         return CreateVote(user=user, song=song)
-
 
 class Mutation(graphene.ObjectType):
     create_song = CreateSong.Field()
     create_vote = CreateVote.Field()
     create_comment = CreateComment.Field()
-    delete_song = DeleteSong.Field()
