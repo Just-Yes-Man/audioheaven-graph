@@ -66,7 +66,29 @@ class Query(graphene.ObjectType):
         if song_id:
             return Comment.objects.filter(song__id=song_id)
         return Comment.objects.all()
+    
+class DeleteSong(graphene.Mutation):
+    ok = graphene.Boolean()
+    message = graphene.String()
 
+    class Arguments:
+        song_id = graphene.Int(required=True)
+
+    def mutate(self, info, song_id):
+        user = info.context.user
+        if user.is_anonymous:
+            raise GraphQLError("You must be logged in to delete a song.")
+
+        try:
+            song = Songs.objects.get(id=song_id)
+        except Songs.DoesNotExist:
+            raise GraphQLError("Song not found.")
+
+        if song.posted_by != user:
+            raise GraphQLError("You are not authorized to delete this song.")
+
+        song.delete()
+        return DeleteSong(ok=True, message="Song deleted successfully.")
     
 class CreateSong(graphene.Mutation):
     id = graphene.Int()
@@ -155,3 +177,4 @@ class Mutation(graphene.ObjectType):
     create_song = CreateSong.Field()
     create_vote = CreateVote.Field()
     create_comment = CreateComment.Field()
+    delete_song = DeleteSong.Field()
